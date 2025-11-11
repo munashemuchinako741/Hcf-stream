@@ -1,0 +1,64 @@
+config:
+  target: 'http://localhost:5000'
+  phases:
+    - duration: 60
+      arrivalRate: 10
+      name: "Warm up phase"
+    - duration: 120
+      arrivalRate: 50
+      name: "Load testing phase"
+    - duration: 60
+      arrivalRate: 100
+      name: "Stress testing phase"
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+
+scenarios:
+  - name: "Health check"
+    weight: 20
+    flow:
+      - get:
+          url: "/health"
+
+  - name: "API root"
+    weight: 30
+    flow:
+      - get:
+          url: "/"
+
+  - name: "Auth endpoints"
+    weight: 25
+    flow:
+      - post:
+          url: "/api/auth/register"
+          json:
+            name: "Test User {{ $randomInt }}"
+            email: "test{{ $randomInt }}@example.com"
+            password: "TestPassword123"
+          expect:
+            - statusCode: 201
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "test{{ $randomInt }}@example.com"
+            password: "TestPassword123"
+          expect:
+            - statusCode: 200
+
+  - name: "Rate limiting test"
+    weight: 15
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "nonexistent@example.com"
+            password: "wrongpassword"
+        expect:
+          - statusCode: 401
+
+  - name: "Metrics endpoint"
+    weight: 10
+    flow:
+      - get:
+          url: "/metrics"

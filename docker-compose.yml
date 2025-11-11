@@ -1,0 +1,114 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: hcf-postgres
+    environment:
+      POSTGRES_DB: hcf_streaming
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mumue20
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/drizzle:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hcf-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: hcf-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - hcf-network
+
+  # Backend API 
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: hcf-backend
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:mumue20@postgres:5432/hcf_streaming
+      REDIS_URL: redis://redis:6379
+      REDIS_HOST: redis          # 👈 for healthMonitor.js
+      REDIS_PORT: 6379           # 👈 for healthMonitor.js
+      JWT_SECRET: wJEsNk5dRIWKYdwX+dBBRLm5ZgnSvYI1YTI+tJQBKqg
+      PORT: 5000
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - hcf-network
+    restart: unless-stopped
+
+  # Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: hcf-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:5000     # used in the browser
+      API_INTERNAL_URL: http://backend:5000          # used inside the container (SSR / server actions)
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - hcf-network
+    restart: unless-stopped
+
+
+  # Nginx RTMP Server for Live Streaming
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: hcf-nginx
+    ports:
+      - "80:80"
+      - "1935:1935"
+    volumes:
+      - hls_data:/tmp/hls
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - hcf-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  hls_data:
+
+networks:
+  hcf-network:
+    driver: bridge
