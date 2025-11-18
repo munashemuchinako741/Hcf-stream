@@ -1,8 +1,7 @@
 const cron = require('node-cron');
 const postgres = require('postgres');
 const { createClient } = require('redis');
-// ❌ REMOVE node-fetch, Node 20 already has global fetch
-// const fetch = require('node-fetch');
+
 const logger = require('../config/logger');
 
 // Health monitoring configuration

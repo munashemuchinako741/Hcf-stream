@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const API_BASE =
-  process.env.API_INTERNAL_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  'http://backend:5000' // fallback inside Docker
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000'
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,10 +13,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Creating user:', { name, email })
+    console.log('[Register] Forwarding to backend:', { name, email })
 
-    // Forward request to Express backend
-    const response = await fetch(`${API_BASE}/api/auth/register`, {
+    const response = await fetch(`${BACKEND_URL}/api/auth/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -27,13 +23,28 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({ name, email, password }),
     })
 
-    const data = await response.json()
+    let data: any
+    try {
+      data = await response.json()
+    } catch {
+      data = { error: 'Unexpected response from auth service' }
+    }
 
-    console.log('User created successfully')
+    if (!response.ok) {
+      // e.g. 400 validation, 401, 429 rate limit, 500, etc.
+      console.warn('[Register] Backend failed:', {
+        status: response.status,
+        body: data,
+      })
+
+      return NextResponse.json(data, { status: response.status })
+    }
+
+    console.log('[Register] User created successfully:', { email })
 
     return NextResponse.json(data, { status: response.status })
   } catch (error) {
-    console.error('Registration error:', error)
+    console.error('Registration error in Next route:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

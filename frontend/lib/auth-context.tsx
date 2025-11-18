@@ -20,6 +20,7 @@ interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
+  token: string | null
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
   logout: () => void
@@ -29,6 +30,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const { data: session, status } = useSession()
@@ -48,10 +50,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
     } else {
       // Check for JWT token (custom auth)
-      const token = localStorage.getItem("token")
-      if (token) {
+      const storedToken = localStorage.getItem("token")
+      if (storedToken) {
+        setToken(storedToken)
         // Check cache first
-        const cacheKey = `auth_verify_${token}`
+        const cacheKey = `auth_verify_${storedToken}`
         const cached = apiCache.get(cacheKey)
         if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
           setUser(cached.data.user)
@@ -64,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({ token: storedToken }),
         })
           .then(res => res.json())
           .then(data => {
@@ -74,10 +77,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setUser(data.user)
             } else {
               localStorage.removeItem("token")
+              setToken(null)
             }
           })
           .catch(() => {
             localStorage.removeItem("token")
+            setToken(null)
           })
       }
     }
@@ -102,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       localStorage.setItem("token", data.token)
+      setToken(data.token)
       setUser(data.user)
       router.push("/live")
     } catch (error) {
@@ -126,8 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data.error || 'Registration failed')
       }
 
-      localStorage.setItem("token", data.token)
-      setUser(data.user)
+      // Don't set token, since register doesn't return it
       router.push("/login")
     } catch (error) {
       console.error("Registration failed:", error)
@@ -144,6 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Also clear custom auth
     localStorage.removeItem("token")
+    setToken(null)
     setUser(null)
     // Clear cache on logout
     apiCache.clear()
@@ -156,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isAuthenticated: !!user,
         isLoading,
+        token,
         login,
         register,
         logout,

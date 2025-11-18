@@ -2,8 +2,9 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { signIn } from "next-auth/react"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,7 +18,16 @@ export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+  const [successMessage, setSuccessMessage] = useState("")
   const { login } = useAuth()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const message = searchParams.get('message')
+    if (message) {
+      setSuccessMessage(message)
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,49 +35,9 @@ export function LoginForm() {
     setError("")
 
     try {
-      // Call your Next.js API route, which forwards to Express
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      })
-
-      let data: any = null
-      try {
-        data = await res.json()
-      } catch {
-        // ignore JSON parse errors
-      }
-
-      if (!res.ok) {
-        // Prefer the most helpful error in this order:
-        // 1) fieldErrors.password or fieldErrors.email
-        // 2) message
-        // 3) error
-        // 4) generic
-        const fieldError =
-          data?.fieldErrors?.password ||
-          data?.fieldErrors?.email ||
-          null
-
-        const message =
-          fieldError ||
-          data?.message ||
-          data?.error ||
-          "Login failed. Please check your email and password."
-
-        setError(message)
-        return
-      }
-
-      // On success, your backend returns: { message, token, user }
-      // Pass that into your auth context (adjust this line to match your auth-context API)
-      await login(data.user, data.token)
-    } catch (err) {
-      console.error("Login failed:", err)
-      setError("Unable to reach the server. Please try again.")
+      await login(email, password)
+    } catch (err: any) {
+      setError(err.message || "Login failed")
     } finally {
       setIsLoading(false)
     }
@@ -90,6 +60,11 @@ export function LoginForm() {
       </CardHeader>
       <CardContent className="space-y-4">
         <form onSubmit={handleSubmit} className="space-y-4">
+          {successMessage && (
+            <div className="p-3 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md">
+              {successMessage}
+            </div>
+          )}
           {error && (
             <div className="p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
               {error}
@@ -113,8 +88,8 @@ export function LoginForm() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="password">Password</Label>
-              <Button variant="link" size="sm" className="px-0 h-auto text-xs">
-                Forgot password?
+              <Button variant="link" size="sm" className="px-0 h-auto text-xs" asChild>
+                <a href="/forgot-password">Forgot password?</a>
               </Button>
             </div>
             <div className="relative">

@@ -34,6 +34,7 @@ const sermons = pgTable('sermons', {
   viewCount: integer('view_count').notNull().default(0),
   isPublished: boolean('is_published').notNull().default(false),
   publishedAt: timestamp('published_at'),
+  transcodedVersions: text('transcoded_versions'), // JSON string of transcoded video URLs
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -64,6 +65,16 @@ const favorites = pgTable('favorites', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
+const passwordResetTokens = pgTable('password_reset_tokens', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  token: text('token').notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 // Relations
 const usersRelations = relations(users, ({ many }) => ({
   favorites: many(favorites),
@@ -89,6 +100,7 @@ module.exports = {
   sermons,
   liveStreams,
   favorites,
+  passwordResetTokens,
   usersRelations,
   sermonsRelations,
   favoritesRelations,

@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const API_BASE =
-  process.env.API_INTERNAL_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  'http://backend:5000' // fallback inside Docker
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000'
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,7 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward request to Express backend
-    const response = await fetch(`${API_BASE}/api/auth/login`, {
+    const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

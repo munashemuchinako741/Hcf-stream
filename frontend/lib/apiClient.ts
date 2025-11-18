@@ -1,25 +1,46 @@
 // lib/apiClient.ts
 const getBaseUrl = () => {
-  if (typeof window === 'undefined') {
-    // server-side (inside Docker)
-    return process.env.API_INTERNAL_URL || 'http://backend:5000';
+  // Server-side (Next.js runtime: API routes, SSR, server components)
+  if (typeof window === "undefined") {
+    // Talk directly to the backend container
+    return process.env.API_INTERNAL_URL || "http://backend:5000";
   }
-  // browser
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+  // Browser: use the public URL (through Nginx)
+  return process.env.NEXT_PUBLIC_API_URL || "";
 };
 
 export async function apiFetch(path: string, options?: RequestInit) {
   const baseUrl = getBaseUrl();
-  const res = await fetch(`${baseUrl}${path}`, {
+
+  // Normalize to avoid double slashes
+  const normalizedBase = baseUrl.replace(/\/+$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  const res = await fetch(`${normalizedBase}${normalizedPath}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...(options?.headers || {}),
     },
   });
+
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${text}`);
+    // Try to parse JSON error first, fallback to text
+    let body: any = null;
+    try {
+      body = await res.json();
+    } catch {
+      const text = await res.text().catch(() => "");
+      body = text || undefined;
+    }
+
+    const msg =
+      (body && (body.error || body.message)) ||
+      `API error ${res.status}`;
+
+    throw new Error(msg);
   }
+
   return res.json();
 }

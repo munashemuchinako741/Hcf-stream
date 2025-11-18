@@ -69,11 +69,14 @@ if (cluster.isMaster && process.env.NODE_ENV === 'production') {
   app.use('/api/auth', require('./routes/auth'));
   app.use('/api/v2/auth', require('./routes/auth-v2'));
 
-  // Facebook Live routes
-  app.use('/api/facebook-live', require('./routes/facebook-live'));
+  // Live Stream routes
+  app.use('/api/live-stream', require('./routes/live-stream'));
 
   // Archive routes
   app.use('/api/archive', require('./routes/archive'));
+
+  // Admin routes
+  app.use('/api/admin', require('./routes/admin'));
 
   // Error handling middleware
   app.use((err, req, res, next) => {

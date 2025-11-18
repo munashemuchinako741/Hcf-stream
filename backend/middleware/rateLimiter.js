@@ -132,9 +132,11 @@ const apiLimiter = createRateLimiter({
 });
 
 // Stricter limiter for authentication endpoints (login, register, etc.)
+// Looser limits in development, tighter in production
+const isProduction = process.env.NODE_ENV === 'production';
 const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 5, // 5 auth requests per IP per 15 minutes
+  limit: isProduction ? 5 : 20, // 5 in prod, 20 in dev auth requests per IP per 15 minutes
   message: 'Too many authentication attempts, please try again later.',
   storePrefix: 'rl:auth:', // MUST be unique
 });

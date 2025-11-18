@@ -42,8 +42,9 @@ export default function AboutPage() {
               <div>
                 <h3 className="text-xl font-semibold text-foreground mb-2">Our Community</h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  A growing family of believers united in faith, supporting each other through worship, prayer, and
-                  fellowship both online and in person.
+                  512 Now, the little tabernacle has no membership, but we have fellowship. We have no creed but Christ, no law but love, no book but the Bible. That’s the only Book that we know of, and the only thing that we know, as we have. As the Blood of Jesus Christ cleanses us from all sins, we have fellowship one with the other, everybody. <br></br>
+                  57-0915M — Hebrews, Chapter Six #3
+                  Rev. William Marrion Branham
                 </p>
               </div>
             </div>
@@ -103,6 +104,12 @@ export default function AboutPage() {
           </Card>
         </div>
       </div>
+            {/* Footer */}
+      <footer className="border-t border-border py-8">
+        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
+          <p>&copy; 2025 HCF Live Stream. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   )
 }

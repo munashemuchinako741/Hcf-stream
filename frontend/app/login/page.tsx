@@ -13,12 +13,14 @@ export default function LoginPage() {
             <p className="text-muted-foreground">Sign in to your account to continue</p>
           </div>
           <LoginForm />
-          <p className="text-center text-sm text-muted-foreground">
-            Don't have an account?{" "}
-            <Link href="/register" className="font-medium text-primary hover:underline">
-              Sign up
-            </Link>
-          </p>
+          <div className="text-center space-y-2">
+            <p className="text-center text-sm text-muted-foreground">
+              Don't have an account?{" "}
+              <Link href="/register" className="font-medium text-primary hover:underline">
+                Sign up
+              </Link>
+            </p>
+          </div>
         </div>
       </main>
     </div>

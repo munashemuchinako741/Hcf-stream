@@ -1,18 +1,10 @@
-// backend/drizzle.config.js
+import { defineConfig } from 'drizzle-kit';
 
-/** @type {import('drizzle-kit').Config} */
-module.exports = {
-  schema: './schema/schema.js',
+export default defineConfig({
+  schema: './schema/schema.js',   // this file must exist
   out: './drizzle',
-
-  // For drizzle-kit v0.20.x CLI
-  driver: 'pg', // 👈 IMPORTANT
-
+  dialect: 'postgresql',
   dbCredentials: {
-    connectionString: process.env.DATABASE_URL,
-    // e.g. postgres://postgres:mumue20@localhost:5432/hcf_streaming
+    url: process.env.DATABASE_URL!,
   },
-
-  verbose: true,
-  strict: true,
-};
+});

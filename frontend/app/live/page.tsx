@@ -18,7 +18,7 @@ export default function LivePage() {
     }
   }, [isAuthenticated, isLoading, router])
 
-  if (isLoading) {
+ { if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -28,7 +28,7 @@ export default function LivePage() {
       </div>
     )
   }
-
+ }
   if (!isAuthenticated) {
     return null // Will redirect to login
   }
@@ -50,6 +50,12 @@ export default function LivePage() {
           </div>
         </div>
       </main>
+                  {/* Footer */}
+      <footer className="border-t border-border py-8">
+        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
+          <p>&copy; 2025 HCF Live Stream. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   )
 }

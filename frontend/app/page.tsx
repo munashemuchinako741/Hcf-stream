@@ -11,7 +11,7 @@ export default function HomePage() {
       <NavigationHeader />
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="relative min-h-[80vh] flex items-center justify-center bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/mp-bg.jpg')" }}>
+        <section className="relative min-h-[90vh] flex items-center justify-center bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/mp-bg.jpg')" }}>
           <div className="absolute inset-0 bg-black/50"></div>
           <div className="relative z-10 container mx-auto px-4 py-16 md:py-24">
             <div className="max-w-3xl mx-auto text-center space-y-6 text-white">

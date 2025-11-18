@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Mail, Lock, UserIcon, Loader2 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
+import { useRouter } from "next/navigation"
 
 export function RegisterForm() {
   const [isLoading, setIsLoading] = useState(false)
@@ -23,6 +24,7 @@ export function RegisterForm() {
     agreeToTerms: false,
   })
   const { register } = useAuth()
+  const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,12 +43,9 @@ export function RegisterForm() {
     setIsLoading(true)
 
     try {
-      // Call Next.js API route which forwards to Express backend
       const res = await fetch("/api/auth/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
@@ -58,11 +57,20 @@ export function RegisterForm() {
       try {
         data = await res.json()
       } catch {
-        // ignore JSON parse error – e.g. empty body
+        // ignore parse error for empty/invalid JSON
       }
 
       if (!res.ok) {
-        // Prefer the most specific & user-friendly message
+        // Special case: rate limit
+        if (res.status === 429) {
+          setError(
+            data?.error ||
+            data?.message ||
+            "Too many attempts. Please wait a few minutes and try again."
+          )
+          return
+        }
+
         const fieldError =
           data?.fieldErrors?.name ||
           data?.fieldErrors?.email ||
@@ -79,12 +87,8 @@ export function RegisterForm() {
         return
       }
 
-      // On success, backend returns something like: { message, user }
-      // If your auth context needs the user, pass it here:
-      await register(formData.name, formData.email, formData.password)
-
-      // Optionally, clear the form or redirect
-      // setFormData({ name: "", email: "", password: "", confirmPassword: "", agreeToTerms: false })
+      // success – backend user is created, redirect to login
+      router.push("/login?message=Registration successful! Please login with your credentials.")
     } catch (err) {
       console.error("Registration failed:", err)
       setError("Unable to reach the server. Please try again.")

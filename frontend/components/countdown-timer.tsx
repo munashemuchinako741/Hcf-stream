@@ -13,23 +13,67 @@ interface TimeLeft {
   seconds: number
 }
 
+interface UpcomingEvent {
+  id: string
+  title: string
+  date: string
+  time: string
+  type: string
+}
+
 export function CountdownTimer() {
-  // Next Sunday at 10:00 AM
+  // Next Sunday at 9:00 AM as fallback
   const getNextSunday = () => {
     const now = new Date()
     const nextSunday = new Date(now)
     nextSunday.setDate(now.getDate() + ((7 - now.getDay()) % 7 || 7))
-    nextSunday.setHours(10, 0, 0, 0)
+    nextSunday.setHours(9, 0, 0, 0)
     return nextSunday
   }
 
-  const [targetDate] = useState(getNextSunday())
+  const [targetDate, setTargetDate] = useState<Date>(getNextSunday())
+  const [eventTitle, setEventTitle] = useState<string>("Next Live Service")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [timeLeft, setTimeLeft] = useState<TimeLeft>({
     days: 0,
     hours: 0,
     minutes: 0,
     seconds: 0,
   })
+
+  useEffect(() => {
+    const fetchNextEvent = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/api/live-stream/upcoming-events')
+        if (!response.ok) {
+          throw new Error('Failed to fetch upcoming events')
+        }
+        const data = await response.json()
+
+        if (data.events && data.events.length > 0) {
+          const nextEvent: UpcomingEvent = data.events[0]
+          // Parse the date and time from the event
+          const eventDateTime = new Date(`${nextEvent.date} ${nextEvent.time}`)
+          setTargetDate(eventDateTime)
+          setEventTitle(nextEvent.title)
+        } else {
+          // No upcoming events, use fallback
+          setTargetDate(getNextSunday())
+          setEventTitle("Next Live Service")
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An error occurred')
+        // On error, use fallback
+        setTargetDate(getNextSunday())
+        setEventTitle("Next Live Service")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchNextEvent()
+  }, [])
 
   useEffect(() => {
     const calculateTimeLeft = () => {
@@ -42,6 +86,13 @@ export function CountdownTimer() {
           minutes: Math.floor((difference / 1000 / 60) % 60),
           seconds: Math.floor((difference / 1000) % 60),
         })
+      } else {
+        setTimeLeft({
+          days: 0,
+          hours: 0,
+          minutes: 0,
+          seconds: 0,
+        })
       }
     }
 
@@ -51,12 +102,44 @@ export function CountdownTimer() {
     return () => clearInterval(timer)
   }, [targetDate])
 
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5 text-primary" />
+            Loading...
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center text-muted-foreground">Loading countdown...</div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5 text-primary" />
+            Next Live Service
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center text-muted-foreground">Unable to load countdown</div>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Clock className="h-5 w-5 text-primary" />
-          Next Live Service
+          {eventTitle}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -93,7 +176,14 @@ export function CountdownTimer() {
           </div>
           <div className="flex items-center gap-2 text-sm">
             <Clock className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">10:00 AM EST</span>
+            <span className="text-muted-foreground">
+              {targetDate.toLocaleTimeString("en-US", {
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+                timeZone: "GMT"
+              })} GMT
+            </span>
           </div>
         </div>
 

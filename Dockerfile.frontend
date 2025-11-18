@@ -9,6 +9,8 @@ RUN apk add --no-cache curl
 
 # Copy package files first (better build cache)
 COPY frontend/package*.json ./
+COPY .npm /root/.npm
+RUN npm ci --offline
 
 # Make npm more tolerant of flaky networks, then install deps
 RUN npm config set fetch-retries 5 \

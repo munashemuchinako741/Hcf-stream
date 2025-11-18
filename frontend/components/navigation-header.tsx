@@ -29,7 +29,13 @@ export function NavigationHeader() {
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
-          <Video className="h-6 w-6 text-primary" />
+            <img
+              src='/logo.png'
+              alt='live-streaming'
+              width='23%'
+              height='23%'
+              className="rounded-full"
+            />
           <span className="text-xl font-bold text-foreground">HCF Live</span>
         </Link>
 
@@ -44,7 +50,7 @@ export function NavigationHeader() {
           <Link href="/about" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
             About
           </Link>
-          {isAuthenticated && (
+          {isAuthenticated && user?.role === 'admin' && (
             <Link href="/admin" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
               Admin
             </Link>
@@ -64,11 +70,15 @@ export function NavigationHeader() {
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>{user?.name}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>Profile</DropdownMenuItem>
-                <DropdownMenuItem>Settings</DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/admin">Admin Dashboard</Link>
+                  <Link href="/profile">Profile</Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem>Settings</DropdownMenuItem>
+                {user?.role === 'admin' && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin">Admin Dashboard</Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout}>Log out</DropdownMenuItem>
               </DropdownMenuContent>
@@ -94,33 +104,37 @@ export function NavigationHeader() {
                 <span className="sr-only">Toggle menu</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-[300px] sm:w-[400px]">
+            <SheetContent side="right" className="w-[85%] sm:w-[90px] md:w-[90px]">
               <SheetHeader>
-                <SheetTitle>Navigation</SheetTitle>
+                   {/* Logo */}
+                  <Link href="/" className="flex items-center gap-2">
+                      <Video className="text-primary"/>
+                    <span className="text-xl font-bold text-foreground"><SheetTitle className="font-bold text-foreground">Harare Christian Fellowship</SheetTitle></span>
+                  </Link>
               </SheetHeader>
-              <nav className="flex flex-col gap-4 mt-6">
+              <nav className="flex flex-col gap-4 mt-5">
                 <Link
                   href="/live"
-                  className="text-lg font-medium text-foreground hover:text-primary transition-colors px-4 py-3 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/20"
+                  className="text-lg font-small text-foreground hover:text-primary transition-colors px-4 py-2 rounded-md hover:bg-amber-300 dark:hover:bg-amber-900/20"
                 >
                   Live
                 </Link>
                 <Link
                   href="/archive"
-                  className="text-lg font-medium text-foreground hover:text-primary transition-colors px-4 py-3 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/20"
+                  className="text-lg font-small text-foreground hover:text-primary transition-colors px-4 py-2 rounded-md hover:bg-amber-300 dark:hover:bg-amber-900/20"
                 >
                   Archive
                 </Link>
                 <Link
                   href="/about"
-                  className="text-lg font-medium text-foreground hover:text-primary transition-colors px-4 py-3 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/20"
+                  className="text-lg font-small text-foreground hover:text-primary transition-colors px-4 py-2 rounded-md hover:bg-amber-300 dark:hover:bg-amber-900/20"
                 >
                   About
                 </Link>
-                {isAuthenticated && (
+                {isAuthenticated && user?.role === 'admin' && (
                   <Link
                     href="/admin"
-                    className="text-lg font-medium text-foreground hover:text-primary transition-colors px-4 py-3 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/20"
+                    className="text-lg font-small text-foreground hover:text-primary transition-colors px-4 py-2 rounded-md hover:bg-amber-300 dark:hover:bg-amber-900/20"
                   >
                     Admin
                   </Link>
@@ -128,7 +142,7 @@ export function NavigationHeader() {
                 {!isAuthenticated && (
                   <Link
                     href="/login"
-                    className="text-lg font-medium text-foreground hover:text-primary transition-colors px-4 py-3 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/20"
+                    className="text-lg font-small text-foreground hover:text-primary transition-colors px-4 py-2 rounded-md hover:bg-amber-300 dark:hover:bg-amber-900/20"
                   >
                     Log in
                   </Link>

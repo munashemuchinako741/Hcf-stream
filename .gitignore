@@ -87,3 +87,12 @@ coverage/
 # Miscellaneous
 *.tgz
 *.tar.gz
+
+# SSL certificates
+ssl/
+
+# Replit IDE file
+.replit
+
+# Potential sensitive file
+prompt.md
