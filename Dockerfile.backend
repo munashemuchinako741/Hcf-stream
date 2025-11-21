@@ -1,41 +1,53 @@
-# Use Node.js 20 (matches Azure + other deps engine requirements)
-FROM node:20-alpine
+# Use Node.js 20 (stable + supports your dependencies)
+FROM node:20-alpine AS builder
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files first (better layer caching)
+# Improve reliability of npm installs
+ENV NODE_ENV=production
+ENV NODE_OPTIONS="--max_old_space_size=2048"
+
+# Copy package files first for caching
 COPY backend/package*.json ./
 
-# Install dependencies (production only) with resilient network settings
+# Install dependencies (production only)
 RUN npm config set fetch-retries 5 \
     && npm config set fetch-retry-mintimeout 20000 \
     && npm config set fetch-retry-maxtimeout 120000 \
-    && npm ci --omit=dev --legacy-peer-deps --no-audit --no-fund --network-timeout=600000
+    && npm config set fetch-timeout 600000 \
+    && npm ci --omit=dev --legacy-peer-deps --no-audit --no-fund
 
-# Copy application code
-COPY backend/ ./ 
+# Copy backend source code
+COPY backend/ .
 
-# Create logs directory
-RUN mkdir -p logs
-
-# Install curl for HEALTHCHECK
+# Install curl for health check
 RUN apk add --no-cache curl
 
-# Create non-root user and give ownership
+# Prepare logs directory BEFORE non-root
+RUN mkdir -p logs
+
+
+# ------------ Runtime Image ------------
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+COPY --from=builder /app ./
+
+# Create non-root user
 RUN addgroup -g 1001 -S nodejs \
     && adduser -S nextjs -u 1001 \
     && chown -R nextjs:nodejs /app
 
 USER nextjs
 
-# Environment & port
+# Ports + env
 ENV NODE_ENV=production
 EXPOSE 5000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=5 \
   CMD curl -f http://localhost:5000/health || exit 1
 
-# Start the application (uses "start" script from package.json)
 CMD ["npm", "start"]

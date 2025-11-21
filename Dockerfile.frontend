@@ -1,44 +1,48 @@
-# Use Node.js LTS version (Next.js requires >= 20.9.x)
-FROM node:20-alpine
+# Use Node.js LTS (Next.js requires >= 20.9.x)
+FROM node:20-alpine AS builder
+
+# Improve performance
+ENV NODE_ENV=production
+ENV NODE_OPTIONS="--max_old_space_size=2048"
 
 # Set working directory
 WORKDIR /app
 
-# Install tools needed at runtime (curl for HEALTHCHECK)
+# Install curl for health checks
 RUN apk add --no-cache curl
 
-# Copy package files first (better build cache)
+# Copy package files first for caching
 COPY frontend/package*.json ./
-COPY .npm /root/.npm
-RUN npm ci --offline
 
-# Make npm more tolerant of flaky networks, then install deps
-RUN npm config set fetch-retries 5 \
-    && npm config set fetch-retry-mintimeout 20000 \
-    && npm config set fetch-retry-maxtimeout 120000 \
-    && npm config set fetch-timeout 600000 \
-    && npm ci --legacy-peer-deps
+# Install dependencies (skip peer conflicts)
+RUN npm install --legacy-peer-deps
 
-# Copy application code
-COPY frontend/ ./ 
+# Copy full project
+COPY frontend/ .
 
-# Build the application
+# Build Next.js
 RUN npm run build
 
-# Create non-root user and fix permissions
+
+# ------------ Production Runtime Image --------------
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Copy built output from builder
+COPY --from=builder /app ./
+
+# Create non-root user
 RUN addgroup -g 1001 -S nodejs \
     && adduser -S nextjs -u 1001 \
     && chown -R nextjs:nodejs /app
 
 USER nextjs
 
-# Environment & port
-ENV NODE_ENV=production
 EXPOSE 3000
 
-# Health check (uses curl we installed above)
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/api/health || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=5 \
+  CMD curl -f http://localhost:3000 || exit 1
 
-# Start the application
 CMD ["npm", "start"]
