@@ -1,26 +1,33 @@
+version: "3.9"
+
 services:
-  # PostgreSQL Database
+  # -------------------------------------------------------
+  # PostgreSQL
+  # -------------------------------------------------------
   postgres:
     image: postgres:15-alpine
     container_name: hcf-postgres
     environment:
-      POSTGRES_DB: hcf_streaming
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: mumue20
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/drizzle:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - hcf-network
+    restart: unless-stopped
 
-  # Redis Cache
+  # -------------------------------------------------------
+  # Redis
+  # -------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: hcf-redis
@@ -35,80 +42,130 @@ services:
       retries: 3
     networks:
       - hcf-network
+    restart: unless-stopped
 
-  # Backend API 
+  # -------------------------------------------------------
+  # Backend (Node.js)
+  # -------------------------------------------------------
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     container_name: hcf-backend
+    image: hcf-stream-main-backend
+
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://postgres:mumue20@postgres:5432/hcf_streaming
-      REDIS_URL: redis://redis:6379
-      REDIS_HOST: redis          # 👈 for healthMonitor.js
-      REDIS_PORT: 6379           # 👈 for healthMonitor.js
-      JWT_SECRET: wJEsNk5dRIWKYdwX+dBBRLm5ZgnSvYI1YTI+tJQBKqg
-      PORT: 5000
+      DATABASE_URL: ${DATABASE_URL}
+
+      REDIS_URL: ${REDIS_URL}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: ${PORT}
+
+      RTMP_HOST: ${RTMP_HOST}
+      RTMP_PORT: ${RTMP_PORT}
+      LIVE_STREAM_KEY: ${LIVE_STREAM_KEY}
+      HLS_PLAYLIST_PATH: ${HLS_PLAYLIST_PATH}
+
     ports:
       - "5000:5000"
+
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+    volumes:
+      - hls_data:/tmp/hls
+
     networks:
       - hcf-network
     restart: unless-stopped
 
-  # Frontend
+  # -------------------------------------------------------
+  # Frontend (Next.js)
+  # -------------------------------------------------------
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: hcf-frontend
+    image: hcf-stream-main-frontend
+
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost   # used in the browser
-      API_INTERNAL_URL: http://backend:5000          # used inside the container (SSR / server actions)
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      API_INTERNAL_URL: ${API_INTERNAL_URL}
+
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+
+      BACKEND_URL: ${BACKEND_URL}
+
+      NEXT_PUBLIC_LIVE_STREAM_URL: ${NEXT_PUBLIC_LIVE_STREAM_URL}
+      NEXT_PUBLIC_STREAM_KEY: ${NEXT_PUBLIC_STREAM_KEY}
+
     ports:
       - "3000:3000"
+
     depends_on:
       backend:
         condition: service_healthy
+
     networks:
       - hcf-network
     restart: unless-stopped
 
+    healthcheck:
+      disable: true
 
-  # Nginx RTMP Server for Live Streaming
+  # -------------------------------------------------------
+  # Nginx (RTMP + Proxy)
+  # -------------------------------------------------------
   nginx:
     build:
       context: .
       dockerfile: Dockerfile.nginx
     container_name: hcf-nginx
+    image: hcf-stream-main-nginx
+
     ports:
       - "80:80"
       - "1935:1935"
+
     volumes:
       - hls_data:/tmp/hls
       - ./ssl:/etc/nginx/ssl:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+
     depends_on:
       - frontend
       - backend
+
     networks:
       - hcf-network
     restart: unless-stopped
 
+# -------------------------------------------------------
+# Volumes
+# -------------------------------------------------------
 volumes:
   postgres_data:
   redis_data:
   hls_data:
 
+# -------------------------------------------------------
+# Network
+# -------------------------------------------------------
 networks:
   hcf-network:
     driver: bridge

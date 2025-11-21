@@ -252,7 +252,7 @@ export function LiveStreamPlayer({ streamKey = "church" }: LiveStreamPlayerProps
         video.pause()
         setIsPlaying(false)
         try {
-          await fetch("/live-stream/viewer-count", {
+          await fetch("/api/live-stream/viewer-count", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "decrement" }),
