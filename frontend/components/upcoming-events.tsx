@@ -21,12 +21,13 @@ export function UpcomingEvents() {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/live-stream/upcoming-events')
+        const response = await fetch(`/api/live-stream/upcoming-events`)
         if (!response.ok) {
-          throw new Error('Failed to fetch upcoming events')
+          throw new Error(`Failed to fetch upcoming events: ${response.statusText}`)
         }
         const data = await response.json()
         setEvents(data.events)
+        setError(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred')
       } finally {
@@ -74,7 +75,7 @@ export function UpcomingEvents() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center text-muted-foreground">Error loading events: {error}</div>
+          <div className="text-center text-destructive">Error loading events: {error}</div>
         </CardContent>
       </Card>
     )

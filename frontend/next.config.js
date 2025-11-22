@@ -1,13 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  images: {
-    remotePatterns: [
+  async rewrites() {
+    return [
       {
-        protocol: 'https',
-        hostname: '**',
+        source: '/api/:path*',
+        destination: 'http://localhost:5000/api/:path*', // Proxy to Backend API
       },
-    ],
+    ]
   },
 }
 

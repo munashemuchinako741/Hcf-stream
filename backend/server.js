@@ -48,7 +48,9 @@ if (cluster.isMaster && process.env.NODE_ENV === 'production') {
 
   // Apply rate limiting
   app.use('/api/', apiLimiter);
-  app.use('/api/auth', authLimiter);
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/register', authLimiter);
+
 
   // Health check endpoint
   app.get('/health', (req, res) => {

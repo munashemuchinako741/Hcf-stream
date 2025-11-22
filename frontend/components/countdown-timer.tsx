@@ -45,7 +45,7 @@ export function CountdownTimer() {
   useEffect(() => {
     const fetchNextEvent = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/live-stream/upcoming-events')
+        const response = await fetch('/api/live-stream/upcoming-events')
         if (!response.ok) {
           throw new Error('Failed to fetch upcoming events')
         }
@@ -53,18 +53,16 @@ export function CountdownTimer() {
 
         if (data.events && data.events.length > 0) {
           const nextEvent: UpcomingEvent = data.events[0]
-          // Parse the date and time from the event
-          const eventDateTime = new Date(`${nextEvent.date} ${nextEvent.time}`)
+          // Parse datetime from backend processed fields
+          const eventDateTime = new Date(nextEvent.date + ' ' + nextEvent.time)
           setTargetDate(eventDateTime)
           setEventTitle(nextEvent.title)
         } else {
-          // No upcoming events, use fallback
           setTargetDate(getNextSunday())
           setEventTitle("Next Live Service")
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred')
-        // On error, use fallback
         setTargetDate(getNextSunday())
         setEventTitle("Next Live Service")
       } finally {
@@ -171,9 +169,11 @@ export function CountdownTimer() {
                 month: "long",
                 day: "numeric",
                 year: "numeric",
+                timeZone: "Africa/Harare"
               })}
             </span>
           </div>
+
           <div className="flex items-center gap-2 text-sm">
             <Clock className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">
@@ -181,8 +181,8 @@ export function CountdownTimer() {
                 hour: "numeric",
                 minute: "2-digit",
                 hour12: true,
-                timeZone: "GMT"
-              })} GMT
+                timeZone: "Africa/Harare"
+              })}
             </span>
           </div>
         </div>
