@@ -11,6 +11,77 @@ const { Result } = require('express-validator');
 
 const router = express.Router();
 
+// Store revoked refresh tokens (in production, use Redis)
+// Format: { token: { expiresAt: timestamp } }
+const revokedTokens = new Map();
+
+// Token configuration
+const TOKEN_CONFIG = {
+  accessToken: {
+    expiresIn: process.env.ACCESS_TOKEN_EXPIRY || '15m', // 15 minutes
+    secret: process.env.JWT_SECRET,
+  },
+  refreshToken: {
+    expiresIn: process.env.REFRESH_TOKEN_EXPIRY || '7d', // 7 days
+    secret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET + '_refresh',
+  },
+};
+
+/**
+ * Generate tokens for authenticated user
+ */
+function generateTokens(userId, userRole) {
+  const accessToken = jwt.sign(
+    { id: userId, role: userRole, type: 'access' },
+    TOKEN_CONFIG.accessToken.secret,
+    { expiresIn: TOKEN_CONFIG.accessToken.expiresIn }
+  );
+
+  const refreshToken = jwt.sign(
+    { id: userId, role: userRole, type: 'refresh' },
+    TOKEN_CONFIG.refreshToken.secret,
+    { expiresIn: TOKEN_CONFIG.refreshToken.expiresIn }
+  );
+
+  return { accessToken, refreshToken };
+}
+
+/**
+ * Set refresh token as HTTP-only secure cookie
+ */
+function setRefreshTokenCookie(res, refreshToken) {
+  res.cookie('refreshToken', refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+    sameSite: 'strict', // CSRF protection
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+    path: '/api/v2/auth',
+  });
+}
+
+/**
+ * Clear refresh token cookie
+ */
+function clearRefreshTokenCookie(res) {
+  res.clearCookie('refreshToken', { path: '/api/v2/auth' });
+}
+
+/**
+ * Log authentication event for audit trail
+ */
+async function logAuthEvent(userId, eventType, metadata = {}) {
+  try {
+    // In production, store in database
+    const timestamp = new Date().toISOString();
+    const event = { userId, eventType, timestamp, ...metadata };
+    
+    // TODO: Store in auth_logs table
+    console.log('AUTH_EVENT:', event);
+  } catch (error) {
+    console.error('Failed to log auth event:', error);
+  }
+}
+
 // API Versioning: v2 endpoints with enhanced security
 router.post('/register', validateRegistration, async (req, res) => {
   try {
@@ -48,10 +119,12 @@ router.post('/login', validateLogin, async (req, res) => {
 
     const user = await db.select().from(users).where(eq(users.email, email)).limit(1);
     if (!user || user.length === 0) {
+      await logAuthEvent(null, 'LOGIN_FAILED_USER_NOT_FOUND', { email });
       return res.status(401).json({ error: 'User not registered' });
     }
 
     if (!await bcrypt.compare(password, user[0].password)) {
+      await logAuthEvent(user[0].id, 'LOGIN_FAILED_INVALID_PASSWORD', { email });
       return res.status(401).json({ error: 'Incorrect password' });
     }
     console.log('User login result:',user[0]);
@@ -59,6 +132,7 @@ router.post('/login', validateLogin, async (req, res) => {
 
     // block unverified / unapproved users
     if (!user[0].isApproved) {
+      await logAuthEvent(user[0].id, 'LOGIN_FAILED_NOT_APPROVED', { email });
       return res.status(403).json({
         error: 'Account not approved yet',
         message:
@@ -66,14 +140,22 @@ router.post('/login', validateLogin, async (req, res) => {
       });
     }
 
-    const token = jwt.sign({ id: user[0].id, role: user[0].role }, process.env.JWT_SECRET, { expiresIn: '24h' });
+    // Generate both access and refresh tokens
+    const { accessToken, refreshToken } = generateTokens(user[0].id, user[0].role);
 
-    // Return user without password
+    // Set refresh token as HTTP-only cookie
+    setRefreshTokenCookie(res, refreshToken);
+
+    // Log successful login
+    await logAuthEvent(user[0].id, 'LOGIN_SUCCESS', { email });
+
+    // Return user without password (access token in body for backward compatibility)
     const { password: _, ...userWithoutPassword } = user[0];
     res.json({
       message: 'Login successful',
-      token,
-      user: userWithoutPassword
+      token: accessToken, // Short-lived access token
+      user: userWithoutPassword,
+      expiresIn: '15m', // Tell client when token expires
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -191,6 +273,146 @@ router.post('/reset-password', async (req, res) => {
   } catch (error) {
     console.error('Reset password error:', error);
     res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// Verify token endpoint
+router.post('/verify', async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ error: 'Token is required' });
+    }
+
+    // Verify the token
+    jwt.verify(token, process.env.JWT_SECRET, async (err, decoded) => {
+      if (err) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+      }
+
+      try {
+        // Fetch user data from database
+        const user = await db.select().from(users).where(eq(users.id, decoded.id)).limit(1);
+
+        if (!user || user.length === 0) {
+          return res.status(401).json({ error: 'User not found' });
+        }
+
+        // Return user data (without password)
+        const { password, ...userWithoutPassword } = user[0];
+        res.json({ user: userWithoutPassword });
+      } catch (dbError) {
+        console.error('Database error during token verification:', dbError);
+        res.status(500).json({ error: 'Database error' });
+      }
+    });
+  } catch (error) {
+    console.error('Token verification error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Refresh access token using refresh token from cookie
+ * POST /api/v2/auth/refresh
+ */
+router.post('/refresh', async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({ error: 'Refresh token is required' });
+    }
+
+    // Check if token has been revoked
+    if (revokedTokens.has(refreshToken)) {
+      await logAuthEvent(null, 'REFRESH_TOKEN_REVOKED', {});
+      clearRefreshTokenCookie(res);
+      return res.status(401).json({ error: 'Refresh token has been revoked' });
+    }
+
+    // Verify refresh token
+    jwt.verify(refreshToken, TOKEN_CONFIG.refreshToken.secret, async (err, decoded) => {
+      if (err) {
+        await logAuthEvent(decoded?.id, 'REFRESH_TOKEN_INVALID', {});
+        clearRefreshTokenCookie(res);
+        return res.status(401).json({ error: 'Invalid or expired refresh token' });
+      }
+
+      try {
+        // Fetch user to ensure they still exist
+        const user = await db.select().from(users).where(eq(users.id, decoded.id)).limit(1);
+
+        if (!user || user.length === 0) {
+          await logAuthEvent(decoded.id, 'REFRESH_TOKEN_USER_NOT_FOUND', {});
+          clearRefreshTokenCookie(res);
+          return res.status(401).json({ error: 'User not found' });
+        }
+
+        // Generate new tokens (refresh token rotation)
+        const { accessToken, refreshToken: newRefreshToken } = generateTokens(user[0].id, user[0].role);
+
+        // Revoke old refresh token
+        const decodedRefresh = jwt.decode(refreshToken);
+        if (decodedRefresh.exp) {
+          revokedTokens.set(refreshToken, { expiresAt: new Date(decodedRefresh.exp * 1000) });
+        }
+
+        // Set new refresh token cookie
+        setRefreshTokenCookie(res, newRefreshToken);
+
+        // Log successful refresh
+        await logAuthEvent(user[0].id, 'TOKEN_REFRESHED', {});
+
+        res.json({
+          message: 'Token refreshed successfully',
+          token: accessToken,
+          expiresIn: '15m',
+        });
+      } catch (dbError) {
+        console.error('Database error during token refresh:', dbError);
+        res.status(500).json({ error: 'Database error' });
+      }
+    });
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Logout endpoint - revoke refresh token
+ * POST /api/v2/auth/logout
+ */
+router.post('/logout', async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+    const { token: accessToken } = req.body;
+
+    // Revoke the refresh token if present
+    if (refreshToken) {
+      const decoded = jwt.decode(refreshToken);
+      if (decoded && decoded.exp) {
+        revokedTokens.set(refreshToken, { expiresAt: new Date(decoded.exp * 1000) });
+      }
+    }
+
+    // Clear refresh token cookie
+    clearRefreshTokenCookie(res);
+
+    // Log logout
+    if (accessToken) {
+      const decoded = jwt.decode(accessToken);
+      if (decoded?.id) {
+        await logAuthEvent(decoded.id, 'LOGOUT', {});
+      }
+    }
+
+    res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

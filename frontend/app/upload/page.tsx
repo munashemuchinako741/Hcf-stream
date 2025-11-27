@@ -1,6 +1,9 @@
-import { VideoUpload } from "@/components/video-upload"
+"use client"
 
-export default function UploadPage() {
+import { VideoUpload } from "@/components/video-upload"
+import { ProtectedRoute } from "@/components/protected-route"
+
+function UploadPageContent() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-4xl mx-auto">
@@ -14,5 +17,13 @@ export default function UploadPage() {
         <VideoUpload />
       </div>
     </div>
+  )
+}
+
+export default function UploadPage() {
+  return (
+    <ProtectedRoute>
+      <UploadPageContent />
+    </ProtectedRoute>
   )
 }

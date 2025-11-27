@@ -16,6 +16,7 @@
 /dist
 /backend/build
 /frontend/build
+/ant-media-server
 
 # Debug logs
 npm-debug.log*

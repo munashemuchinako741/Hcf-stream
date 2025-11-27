@@ -65,6 +65,36 @@ router.get('/current-stream', authenticateToken, async (req, res) => {
   }
 });
 
+// ====== Get stream id (secure) ======
+// Returns the active stream id for the current broadcast. This endpoint requires
+// a valid access token and proxies the request to Ant Media to avoid exposing
+// stream identifiers in the client URL or public config.
+router.get('/stream-id', authenticateToken, async (req, res) => {
+  try {
+    const response = await axios.get(
+      `${ANT_MEDIA_SERVER_URL}/${ANT_APP_NAME}/rest/v2/broadcasts/getLatest`,
+      { headers: { Authorization: req.headers['authorization'] } }
+    );
+
+    if (response.data && response.data.data && response.data.data.streamId) {
+      return res.json({ streamId: response.data.data.streamId });
+    }
+
+    // Fallback: if no active stream reported by Ant Media, but a server-side
+    // STREAM_KEY is configured (non-public env var), return it. This allows
+    // administrators to set a default stream id server-side without exposing it
+    // to the client bundle via NEXT_PUBLIC_* env vars.
+    if (process.env.STREAM_KEY) {
+      return res.json({ streamId: process.env.STREAM_KEY });
+    }
+
+    return res.status(404).json({ error: 'No active stream found', streamId: null });
+  } catch (error) {
+    console.error('Error fetching stream id:', error.message || error);
+    return res.status(500).json({ error: 'Failed to fetch stream id' });
+  }
+});
+
 // ====== Get viewer count ======
 router.get('/viewer-count', async (req, res) => {
   try {

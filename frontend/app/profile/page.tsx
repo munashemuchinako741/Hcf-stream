@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, User } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { NavigationHeader } from "@/components/navigation-header"
+import { ProtectedRoute } from "@/components/protected-route"
 
 interface ProfileData {
   username: string
@@ -17,9 +17,8 @@ interface ProfileData {
   password?: string
 }
 
-export default function ProfilePage() {
-  const { user, isAuthenticated, logout } = useAuth()
-  const router = useRouter()
+function ProfilePageContent() {
+  const { user, logout } = useAuth()
   const [profile, setProfile] = useState<ProfileData>({ username: "", email: "" })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -27,13 +26,8 @@ export default function ProfilePage() {
   const [success, setSuccess] = useState("")
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push("/login")
-      return
-    }
-
     fetchProfile()
-  }, [isAuthenticated, router])
+  }, [])
 
   const fetchProfile = async () => {
     try {
@@ -195,5 +189,13 @@ export default function ProfilePage() {
         </div>
       </footer>
     </div>
+  )
+}
+
+export default function ProfilePage() {
+  return (
+    <ProtectedRoute>
+      <ProfilePageContent />
+    </ProtectedRoute>
   )
 }

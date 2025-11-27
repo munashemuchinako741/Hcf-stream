@@ -7,107 +7,111 @@ const { upload } = require('../config/s3-v3');
 const videoProcessor = require('../services/videoProcessor');
 const router = express.Router();
 
-// Middleware to verify JWT token
+/* -------------------- AUTH MIDDLEWARE -------------------- */
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
+  const token = req.headers['authorization']?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Access token required" });
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid token' });
-    }
+    if (err) return res.status(403).json({ error: "Invalid token" });
     req.user = user;
     next();
   });
 };
 
-// Get archived videos (protected)
+/* -------------------- GET ALL PUBLISHED VIDEOS -------------------- */
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const videos = await db.select().from(sermons).where(eq(sermons.isPublished, true));
+    const videos = await db
+      .select()
+      .from(sermons)
+      .where(eq(sermons.isPublished, true));
+
     res.json({ videos });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Get specific video (protected)
+/* -------------------- GET SINGLE VIDEO -------------------- */
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const [video] = await db.select().from(sermons).where(eq(sermons.id, parseInt(id))).limit(1);
-    if (!video) {
-      return res.status(404).json({ error: 'Video not found' });
-    }
+
+    const [video] = await db
+      .select()
+      .from(sermons)
+      .where(eq(sermons.id, parseInt(id)))
+      .limit(1);
+
+    if (!video) return res.status(404).json({ error: "Video not found" });
+
     res.json({ video });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Upload video (protected, admin only)
+/* -------------------- UPLOAD VIDEO (ADMIN) -------------------- */
 router.post('/upload', authenticateToken, upload.single('video'), async (req, res) => {
   try {
-    // Check if user is admin
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
+    if (req.user.role !== 'admin')
+      return res.status(403).json({ error: "Admin access required" });
 
-    if (!req.file) {
-      return res.status(400).json({ error: 'No video file provided' });
-    }
+    if (!req.file)
+      return res.status(400).json({ error: "No video file provided" });
 
     const { title, description, speaker, series, category } = req.body;
 
-    // Get video duration
-    const duration = await videoProcessor.getVideoDuration(req.file.location);
+    // Read from S3 upload
+    const videoUrl = req.file.location;
+    const s3Key = req.file.key;
+
+    // Get duration
+    const duration = await videoProcessor.getVideoDuration(videoUrl);
 
     // Generate thumbnail
-    const thumbnailUrl = await videoProcessor.generateThumbnail(req.file.location, req.file.key);
+    const thumbnailUrl = await videoProcessor.generateThumbnail(videoUrl, s3Key);
 
-    // Transcode video to multiple resolutions
-    const transcodedVersions = await videoProcessor.transcodeVideo(req.file.location, req.file.key);
+    // Transcode into multiple resolutions
+    const transcodedVersions = await videoProcessor.transcodeVideo(videoUrl, s3Key);
 
-    // Save to database
+    // Save in DB
     const [newSermon] = await db.insert(sermons).values({
       title,
       description,
       speaker,
       series,
-      videoUrl: req.file.location,
+      category,
+      videoUrl,
       thumbnailUrl,
       duration,
-      category,
       transcodedVersions: JSON.stringify(transcodedVersions),
-      isPublished: false, // Admin needs to review before publishing
+      isPublished: false,
+      createdAt: new Date()
     }).returning();
 
     res.status(201).json({
-      message: 'Video uploaded and processed successfully',
+      message: "Video uploaded successfully",
       video: newSermon
     });
-  } catch (error) {
-    console.error('Video upload error:', error);
-    res.status(500).json({ error: 'Failed to upload video: ' + error.message });
+
+  } catch (err) {
+    console.error("Upload error:", err);
+    res.status(500).json({ error: "Failed to upload video: " + err.message });
   }
 });
 
-// Update video (publish/unpublish)
+/* -------------------- PUBLISH / UNPUBLISH -------------------- */
 router.patch('/:id', authenticateToken, async (req, res) => {
   try {
-    // Check if user is admin
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
+    if (req.user.role !== 'admin')
+      return res.status(403).json({ error: "Admin access required" });
 
     const { id } = req.params;
     const { isPublished } = req.body;
 
-    const [updatedVideo] = await db.update(sermons)
+    const [updated] = await db.update(sermons)
       .set({
         isPublished,
         publishedAt: isPublished ? new Date() : null
@@ -115,40 +119,39 @@ router.patch('/:id', authenticateToken, async (req, res) => {
       .where(eq(sermons.id, parseInt(id)))
       .returning();
 
-    if (!updatedVideo) {
-      return res.status(404).json({ error: 'Video not found' });
-    }
+    if (!updated) return res.status(404).json({ error: "Video not found" });
 
-    res.json({ video: updatedVideo });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.json({ video: updated });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Delete video (protected, admin only)
+/* -------------------- DELETE VIDEO -------------------- */
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
-    // Check if user is admin
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
+    if (req.user.role !== 'admin')
+      return res.status(403).json({ error: "Admin access required" });
 
     const { id } = req.params;
 
-    // Get video info before deleting
-    const [video] = await db.select().from(sermons).where(eq(sermons.id, parseInt(id))).limit(1);
-    if (!video) {
-      return res.status(404).json({ error: 'Video not found' });
-    }
+    // Check existing video
+    const [video] = await db
+      .select()
+      .from(sermons)
+      .where(eq(sermons.id, parseInt(id)))
+      .limit(1);
 
-    // Delete from database
+    if (!video) return res.status(404).json({ error: "Video not found" });
+
+    // Delete from DB
     await db.delete(sermons).where(eq(sermons.id, parseInt(id)));
 
-    // TODO: Delete files from S3 (optional - can be done asynchronously)
+    res.json({ message: "Video deleted successfully" });
 
-    res.json({ message: 'Video deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

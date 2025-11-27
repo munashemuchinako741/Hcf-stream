@@ -334,4 +334,82 @@ function formatDuration(seconds) {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
+// ===============================
+// AWS S3 UPLOAD (FINAL VERSION)
+// ===============================
+const { S3Client } = require("@aws-sdk/client-s3");
+const multer = require("multer");
+const multerS3 = require("multer-s3-v3");
+const path = require("path");
+
+// Create S3 client (AWS SDK v3)
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  }
+});
+
+
+const upload = multer({
+  storage: multerS3({
+    s3,
+    bucket: process.env.AWS_S3_BUCKET_NAME,
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    key: function (req, file, cb) {
+      const ext = path.extname(file.originalname);
+      const filename = `sermons/${Date.now()}${ext}`;
+      cb(null, filename);
+    }
+  }),
+  limits: { fileSize: 600 * 1024 * 1024 }, // 600MB max file size
+});
+  
+
+// ===============================
+// UPLOAD ROUTE (FINAL)
+// ===============================
+router.post(
+  "/upload",
+  authenticateAdmin,
+  upload.single("video"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No video file received" });
+      }
+
+      const { title, description, speaker, series, category } = req.body;
+
+      // S3 public URL
+      const videoUrl = req.file.location;
+
+      // Save into database
+      const [newSermon] = await db.insert(sermons).values({
+        title: title || "Untitled",
+        description: description || "",
+        speaker: speaker || "",
+        series: series || "",
+        category: category || "Other",
+        videoUrl,
+        viewCount: 0,
+        isPublished: true,           // <-- FIX
+        publishedAt: new Date(),  
+        createdAt: new Date(),
+      }).returning();
+
+      return res.json({
+        message: "Video uploaded to S3 successfully!",
+        sermon: newSermon,
+        videoUrl,
+      });
+
+    } catch (error) {
+      console.error("S3 Upload Error:", error);
+      return res.status(500).json({ error: "Failed to upload video to S3" });
+    }
+  }
+);
+
 module.exports = router;

@@ -7,8 +7,8 @@ import { RecentActivity } from "@/components/recent-activity"
 import { ScheduleManager } from "@/components/schedule-manager"
 import { VideoUpload } from "@/components/video-upload"
 import { useAuth } from "@/lib/auth-context"
-import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { ProtectedRoute } from "@/components/protected-route"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -27,21 +27,14 @@ interface User {
   updatedAt: string
 }
 
-export default function AdminPage() {
-  const { isAuthenticated, isLoading, user } = useAuth()
-  const router = useRouter()
+function AdminPageContent() {
+  const { user, isLoading, isAuthenticated } = useAuth()
   const [activeTab, setActiveTab] = useState("dashboard")
   const [users, setUsers] = useState<User[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState("createdAt")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
-
-  useEffect(() => {
-    if (!isLoading && (!isAuthenticated || user?.role !== 'admin')) {
-      router.push("/login")
-    }
-  }, [isAuthenticated, isLoading, user, router])
 
   const fetchUsers = async () => {
     setLoadingUsers(true)
@@ -329,5 +322,13 @@ export default function AdminPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function AdminPage() {
+  return (
+    <ProtectedRoute requiredRole="admin">
+      <AdminPageContent />
+    </ProtectedRoute>
   )
 }

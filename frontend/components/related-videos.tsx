@@ -1,41 +1,41 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Play } from "lucide-react"
-import Link from "next/link"
+"use client";
+
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Play } from "lucide-react";
+import Link from "next/link";
 
 interface RelatedVideo {
-  id: string
-  title: string
-  speaker: string
-  duration: string
-  thumbnail: string
+  id: number;
+  title: string;
+  speaker: string;
+  duration: number;
+  thumbnailUrl: string;
+  category: string;
+  createdAt: string;
 }
 
-const relatedVideos: RelatedVideo[] = [
-  {
-    id: "2",
-    title: "Walking in God's Purpose",
-    speaker: "Pastor John Smith",
-    duration: "1:15:32",
-    thumbnail: "/church-purpose.jpg",
-  },
-  {
-    id: "5",
-    title: "Building Strong Foundations",
-    speaker: "Pastor John Smith",
-    duration: "1:21:08",
-    thumbnail: "/church-foundation.jpg",
-  },
-  {
-    id: "6",
-    title: "Love in Action",
-    speaker: "Pastor John Smith",
-    duration: "1:16:55",
-    thumbnail: "/church-love.jpg",
-  },
-]
-
 export function RelatedVideos({ currentVideoId }: { currentVideoId: string }) {
-  const filteredVideos = relatedVideos.filter((v) => v.id !== currentVideoId)
+  const [videos, setVideos] = useState<RelatedVideo[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(`/api/archive/related/${currentVideoId}`);
+        const data = await res.json();
+        setVideos(data.related || []);
+      } catch {
+        setVideos([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, [currentVideoId]);
+
+  if (loading) return <Card className="p-4">Loading...</Card>;
 
   return (
     <Card>
@@ -43,12 +43,12 @@ export function RelatedVideos({ currentVideoId }: { currentVideoId: string }) {
         <CardTitle className="text-lg">Related Sermons</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {filteredVideos.map((video) => (
+        {videos.map((video) => (
           <Link key={video.id} href={`/archive/${video.id}`}>
             <div className="flex gap-3 group cursor-pointer">
               <div className="relative w-40 aspect-video bg-muted rounded overflow-hidden flex-shrink-0">
                 <img
-                  src={video.thumbnail || "/placeholder.svg"}
+                  src={video.thumbnailUrl || "/placeholder.svg"}
                   alt={video.title}
                   className="w-full h-full object-cover"
                 />
@@ -56,9 +56,6 @@ export function RelatedVideos({ currentVideoId }: { currentVideoId: string }) {
                   <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
                     <Play className="h-4 w-4 text-primary-foreground ml-0.5" />
                   </div>
-                </div>
-                <div className="absolute bottom-1 right-1 bg-black/80 backdrop-blur-sm px-1.5 py-0.5 rounded text-xs text-white font-medium">
-                  {video.duration}
                 </div>
               </div>
               <div className="flex-1 space-y-1">
@@ -70,7 +67,11 @@ export function RelatedVideos({ currentVideoId }: { currentVideoId: string }) {
             </div>
           </Link>
         ))}
+
+        {videos.length === 0 && (
+          <p className="text-sm text-muted-foreground">No related videos found</p>
+        )}
       </CardContent>
     </Card>
-  )
+  );
 }

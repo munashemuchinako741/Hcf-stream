@@ -1,207 +1,173 @@
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegStatic = require('ffmpeg-static');
-const ffprobeStatic = require('@ffmpeg-installer/ffmpeg').path;
-const fs = require('fs');
-const path = require('path');
-const { s3Client } = require('../config/s3-v3');
+const ffmpeg = require("fluent-ffmpeg");
+const ffmpegStatic = require("ffmpeg-static");
+const ffprobeStatic = require("@ffprobe-installer/ffprobe").path;
+const fs = require("fs");
+const path = require("path");
+const https = require("https");
+const { PutObjectCommand } = require("@aws-sdk/client-s3");
+const { s3Client } = require("../config/s3-v3");
 
-// Set ffmpeg paths
+// Set paths
 ffmpeg.setFfmpegPath(ffmpegStatic);
 ffmpeg.setFfprobePath(ffprobeStatic);
 
 class VideoProcessor {
   constructor() {
-    this.tempDir = path.join(__dirname, '../temp');
+    this.tempDir = path.join(__dirname, "../temp");
+
     if (!fs.existsSync(this.tempDir)) {
       fs.mkdirSync(this.tempDir, { recursive: true });
     }
   }
 
-  /**
-   * Generate thumbnail from video
-   * @param {string} videoUrl - S3 URL of the video
-   * @param {string} videoKey - S3 key of the video
-   * @returns {Promise<string>} - S3 URL of the generated thumbnail
-   */
-  async generateThumbnail(videoUrl, videoKey) {
+  /* ======================================================
+     DOWNLOAD A FILE FROM URL → TEMP
+  ====================================================== */
+  async downloadTempFile(url, extension = ".mp4") {
     return new Promise((resolve, reject) => {
-      const tempVideoPath = path.join(this.tempDir, `temp_${Date.now()}.mp4`);
-      const tempThumbnailPath = path.join(this.tempDir, `thumb_${Date.now()}.jpg`);
+      const tmpPath = path.join(this.tempDir, `${Date.now()}${extension}`);
+      const file = fs.createWriteStream(tmpPath);
 
-      // Download video from S3 temporarily
-      const videoStream = fs.createWriteStream(tempVideoPath);
-      const https = require('https');
-      const url = require('url');
-
-      https.get(videoUrl, (response) => {
-        response.pipe(videoStream);
-        videoStream.on('finish', () => {
-          videoStream.close();
-
-          // Generate thumbnail at 10% of video duration
-          ffmpeg(tempVideoPath)
-            .screenshots({
-              count: 1,
-              folder: this.tempDir,
-              filename: path.basename(tempThumbnailPath, '.jpg'),
-              timemarks: ['10%'],
-              size: '640x360'
-            })
-            .on('end', async () => {
-              try {
-                // Upload thumbnail to S3
-                const thumbnailBuffer = fs.readFileSync(tempThumbnailPath);
-                const thumbnailKey = `thumbnails/${Date.now()}-${path.basename(videoKey, path.extname(videoKey))}.jpg`;
-
-                const { PutObjectCommand } = require('@aws-sdk/client-s3');
-                await s3Client.send(new PutObjectCommand({
-                  Bucket: process.env.AWS_S3_BUCKET_NAME,
-                  Key: thumbnailKey,
-                  Body: thumbnailBuffer,
-                  ContentType: 'image/jpeg',
-                  ACL: 'public-read'
-                }));
-                const uploadResult = { Location: `https://${process.env.AWS_S3_BUCKET_NAME}.s3.amazonaws.com/${thumbnailKey}` };
-
-                // Clean up temp files
-                fs.unlinkSync(tempVideoPath);
-                fs.unlinkSync(tempThumbnailPath);
-
-                resolve(uploadResult.Location);
-              } catch (error) {
-                reject(error);
-              }
-            })
-            .on('error', (err) => {
-              // Clean up temp files
-              if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
-              if (fs.existsSync(tempThumbnailPath)) fs.unlinkSync(tempThumbnailPath);
-              reject(err);
-            });
+      https
+        .get(url, (response) => {
+          response.pipe(file);
+          file.on("finish", () => file.close(() => resolve(tmpPath)));
+        })
+        .on("error", (err) => {
+          fs.unlinkSync(tmpPath);
+          reject(err);
         });
-      }).on('error', (err) => {
-        if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
-        reject(err);
-      });
     });
   }
 
-  /**
-   * Transcode video to multiple formats/resolutions
-   * @param {string} videoUrl - S3 URL of the original video
-   * @param {string} videoKey - S3 key of the original video
-   * @returns {Promise<Object>} - Object containing transcoded video URLs
-   */
-  async transcodeVideo(videoUrl, videoKey) {
-    const transcodedVersions = {};
-    const resolutions = [
-      { name: '1080p', size: '1920x1080', bitrate: '3000k' },
-      { name: '720p', size: '1280x720', bitrate: '1500k' },
-      { name: '480p', size: '854x480', bitrate: '800k' }
-    ];
+  /* ======================================================
+     UPLOAD FILE TO S3 (NO ACL → bucket policy handles access)
+  ====================================================== */
+  async uploadToS3(buffer, key, contentType) {
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: process.env.AWS_S3_BUCKET_NAME,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      })
+    );
 
-    for (const res of resolutions) {
-      try {
-        const transcodedUrl = await this.transcodeToResolution(videoUrl, videoKey, res);
-        transcodedVersions[res.name] = transcodedUrl;
-      } catch (error) {
-        console.error(`Failed to transcode to ${res.name}:`, error);
-        // Continue with other resolutions even if one fails
-      }
-    }
-
-    return transcodedVersions;
+    return `https://${process.env.AWS_S3_BUCKET_NAME}.s3.amazonaws.com/${key}`;
   }
 
-  /**
-   * Transcode video to specific resolution
-   * @param {string} videoUrl - S3 URL of the original video
-   * @param {string} videoKey - S3 key of the original video
-   * @param {Object} resolution - Resolution config
-   * @returns {Promise<string>} - S3 URL of transcoded video
-   */
-  async transcodeToResolution(videoUrl, videoKey, resolution) {
-    return new Promise((resolve, reject) => {
-      const tempVideoPath = path.join(this.tempDir, `temp_${Date.now()}.mp4`);
-      const tempTranscodedPath = path.join(this.tempDir, `transcoded_${Date.now()}.mp4`);
-
-      // Download video from S3 temporarily
-      const videoStream = fs.createWriteStream(tempVideoPath);
-      const https = require('https');
-
-      https.get(videoUrl, (response) => {
-        response.pipe(videoStream);
-        videoStream.on('finish', () => {
-          videoStream.close();
-
-          // Transcode video
-          ffmpeg(tempVideoPath)
-            .videoCodec('libx264')
-            .audioCodec('aac')
-            .size(resolution.size)
-            .videoBitrate(resolution.bitrate)
-            .audioBitrate('128k')
-            .outputOptions([
-              '-preset fast',
-              '-crf 22',
-              '-movflags +faststart'
-            ])
-            .output(tempTranscodedPath)
-            .on('end', async () => {
-              try {
-                // Upload transcoded video to S3
-                const transcodedBuffer = fs.readFileSync(tempTranscodedPath);
-                const baseName = path.basename(videoKey, path.extname(videoKey));
-                const transcodedKey = `videos/${baseName}_${resolution.name}.mp4`;
-
-                const { PutObjectCommand } = require('@aws-sdk/client-s3');
-                await s3Client.send(new PutObjectCommand({
-                  Bucket: process.env.AWS_S3_BUCKET_NAME,
-                  Key: transcodedKey,
-                  Body: transcodedBuffer,
-                  ContentType: 'video/mp4',
-                  ACL: 'public-read'
-                }));
-                const uploadResult = { Location: `https://${process.env.AWS_S3_BUCKET_NAME}.s3.amazonaws.com/${transcodedKey}` };
-
-                // Clean up temp files
-                fs.unlinkSync(tempVideoPath);
-                fs.unlinkSync(tempTranscodedPath);
-
-                resolve(uploadResult.Location);
-              } catch (error) {
-                reject(error);
-              }
-            })
-            .on('error', (err) => {
-              // Clean up temp files
-              if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
-              if (fs.existsSync(tempTranscodedPath)) fs.unlinkSync(tempTranscodedPath);
-              reject(err);
-            })
-            .run();
-        });
-      }).on('error', (err) => {
-        if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
-        reject(err);
-      });
-    });
-  }
-
-  /**
-   * Get video duration
-   * @param {string} videoUrl - S3 URL of the video
-   * @returns {Promise<number>} - Duration in seconds
-   */
+  /* ======================================================
+    GET VIDEO DURATION
+  ====================================================== */
   async getVideoDuration(videoUrl) {
     return new Promise((resolve, reject) => {
       ffmpeg.ffprobe(videoUrl, (err, metadata) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(Math.floor(metadata.format.duration));
-        }
+        if (err) return reject(err);
+
+        const duration = Math.floor(metadata.format.duration);
+        resolve(duration);
       });
+    });
+  }
+
+  /* ======================================================
+     GENERATE THUMBNAIL
+  ====================================================== */
+  async generateThumbnail(videoUrl, videoKey) {
+    try {
+      const tempVideo = await this.downloadTempFile(videoUrl, ".mp4");
+      const tempThumb = path.join(this.tempDir, `thumb_${Date.now()}.jpg`);
+
+      await new Promise((resolve, reject) => {
+        ffmpeg(tempVideo)
+          .on("error", reject)
+          .on("end", resolve)
+          .screenshots({
+            folder: this.tempDir,
+            filename: path.basename(tempThumb),
+            timemarks: ["10%"],
+            size: "640x360",
+          });
+      });
+
+      const buffer = fs.readFileSync(tempThumb);
+      const key = `thumbnails/${Date.now()}-${path.basename(videoKey, path.extname(videoKey))}.jpg`;
+
+      const url = await this.uploadToS3(buffer, key, "image/jpeg");
+
+      fs.unlinkSync(tempVideo);
+      fs.unlinkSync(tempThumb);
+
+      return url;
+    } catch (err) {
+      console.error("Thumbnail error:", err);
+      throw err;
+    }
+  }
+
+  /* ======================================================
+     TRANSCODE MULTIPLE RESOLUTIONS
+  ====================================================== */
+  async transcodeVideo(videoUrl, videoKey) {
+    const resolutions = [
+      { name: "1080p", size: "1920x1080", bitrate: "3000k" },
+      { name: "720p", size: "1280x720", bitrate: "1500k" },
+      { name: "480p", size: "854x480", bitrate: "800k" },
+    ];
+
+    const results = {};
+
+    for (const res of resolutions) {
+      try {
+        const output = await this.transcodeToResolution(videoUrl, videoKey, res);
+        results[res.name] = output;
+      } catch (err) {
+        console.log(`⚠ Failed ${res.name}:`, err.message);
+      }
+    }
+
+    return results;
+  }
+
+  /* ======================================================
+     TRANSCODE ONE RESOLUTION
+  ====================================================== */
+  async transcodeToResolution(videoUrl, videoKey, res) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const tempVideo = await this.downloadTempFile(videoUrl, ".mp4");
+        const tempOutput = path.join(this.tempDir, `out_${Date.now()}.mp4`);
+
+        ffmpeg(tempVideo)
+          .videoCodec("libx264")
+          .audioCodec("aac")
+          .size(res.size)
+          .videoBitrate(res.bitrate)
+          .audioBitrate("128k")
+          .outputOptions(["-preset fast", "-crf 23", "-movflags +faststart"])
+          .output(tempOutput)
+          .on("end", async () => {
+            try {
+              const buffer = fs.readFileSync(tempOutput);
+              const base = path.basename(videoKey, path.extname(videoKey));
+
+              const key = `videos/${base}_${res.name}.mp4`;
+
+              const url = await this.uploadToS3(buffer, key, "video/mp4");
+
+              fs.unlinkSync(tempVideo);
+              fs.unlinkSync(tempOutput);
+
+              resolve(url);
+            } catch (err) {
+              reject(err);
+            }
+          })
+          .on("error", (err) => reject(err))
+          .run();
+      } catch (err) {
+        reject(err);
+      }
     });
   }
 }

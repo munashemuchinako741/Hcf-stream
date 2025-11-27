@@ -1,61 +1,49 @@
-"use client"
+"use client";
 
-import { NavigationHeader } from "@/components/navigation-header"
-import { LiveStreamPlayer } from "@/components/live-stream-player"
-import { StreamChat } from "@/components/stream-chat"
-import { StreamInfo } from "@/components/stream-info"
-import { useAuth } from "@/lib/auth-context"
-import { useRouter } from "next/navigation"
-import { useEffect } from "react"
+import { NavigationHeader } from "@/components/navigation-header";
+import LiveStreamPlayer from "@/components/live-stream-player";
+import { StreamChat } from "@/components/stream-chat";
+import { ProtectedRoute } from "@/components/protected-route";
+import { useSearchParams } from "next/navigation";
 
-export default function LivePage() {
-  const { isAuthenticated, isLoading } = useAuth()
-  const router = useRouter()
+function LivePageContent() {
+  const searchParams = useSearchParams();
+  const antBaseURL = process.env.NEXT_PUBLIC_ANT_BASE_URL;
 
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push("/login")
-    }
-  }, [isAuthenticated, isLoading, router])
-
- { if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    )
-  }
- }
-  if (!isAuthenticated) {
-    return null // Will redirect to login
-  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <NavigationHeader />
+
       <main className="flex-1 container mx-auto px-4 py-6">
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Main Video Player - Takes 2 columns on large screens */}
+          {/* Player */}
           <div className="lg:col-span-2 space-y-6">
-            <LiveStreamPlayer streamKey={process.env.NEXT_PUBLIC_STREAM_KEY || "church"} />
-            <StreamInfo />
+            <div className="w-full rounded-lg overflow-hidden bg-black">
+              <LiveStreamPlayer streamKey="church" /> {/* ✔ Correct usage */}
+            </div>
           </div>
 
-          {/* Chat Sidebar - Takes 1 column on large screens */}
+          {/* Chat */}
           <div className="lg:col-span-1">
             <StreamChat />
           </div>
         </div>
       </main>
-                  {/* Footer */}
+
       <footer className="border-t border-border py-8">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
           <p>&copy; 2025 HCF Live Stream. All rights reserved.</p>
         </div>
       </footer>
     </div>
-  )
+  );
+}
+
+export default function LivePage() {
+  return (
+    <ProtectedRoute>
+      <LivePageContent />
+    </ProtectedRoute>
+  );
 }

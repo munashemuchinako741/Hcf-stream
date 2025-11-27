@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const cluster = require('cluster');
 const os = require('os');
 require('dotenv').config();
@@ -33,6 +34,7 @@ if (cluster.isMaster && process.env.NODE_ENV === 'production') {
   // Middleware
   app.use(cors());
   app.use(express.json());
+  app.use(cookieParser()); // Parse cookies for refresh token handling
 
   // Security middleware
   const securityMiddleware = require('./middleware/security');

@@ -1,0 +1,23 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y \
+    openjdk-17-jre-headless \
+    bash \
+    wget \
+    curl \
+    supervisor \
+    libva-drm2 \
+    libva2 \
+    libvdpau-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /usr/local/antmedia
+WORKDIR /usr/local/antmedia
+
+COPY ./ant-media-server-community-2.16.0/ ./
+
+RUN find ./ant-media-server -type f -name "*.sh" -exec chmod +x {} \;
+
+EXPOSE 5080 5443 1935
+
+CMD ["./ant-media-server/start.sh"]

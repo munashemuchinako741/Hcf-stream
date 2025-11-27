@@ -1,12 +1,17 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import { useSession, signOut } from "next-auth/react"
 
 // Cache for API responses
 const apiCache = new Map<string, { data: any; timestamp: number }>()
 const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
+// Token refresh configuration
+const TOKEN_CONFIG = {
+  accessTokenExpiry: 15 * 60 * 1000, // 15 minutes
+  refreshThreshold: 2 * 60 * 1000, // Refresh when 2 minutes left
+}
 
 interface User {
   id: number
@@ -32,63 +37,127 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const tokenRefreshInterval = useRef<NodeJS.Timeout | null>(null)
   const router = useRouter()
-  const { data: session, status } = useSession()
 
-  // Check for existing session on mount
-  useEffect(() => {
-    if (status === "loading") return
-
-    if (session?.user) {
-      // Convert NextAuth session to our User type
-      setUser({
-        id: parseInt((session.user as any).id || "0"),
-        name: session.user.name || "",
-        email: session.user.email || "",
-        role: "user", // Default role
-        isApproved: true, // Social logins are pre-approved
+  /**
+   * Refresh access token using the refresh token (stored in HTTP-only cookie)
+   */
+  const refreshAccessToken = async () => {
+    try {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Send cookies (refresh token)
       })
-    } else {
-      // Check for JWT token (custom auth)
-      const storedToken = localStorage.getItem("token")
-      if (storedToken) {
-        setToken(storedToken)
-        // Check cache first
-        const cacheKey = `auth_verify_${storedToken}`
-        const cached = apiCache.get(cacheKey)
-        if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-          setUser(cached.data.user)
-          setIsLoading(false)
-          return
-        }
 
-        fetch('/api/auth/verify', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ token: storedToken }),
-        })
-          .then(res => res.json())
-          .then(data => {
-            if (data.user) {
-              // Cache the response
-              apiCache.set(cacheKey, { data, timestamp: Date.now() })
-              setUser(data.user)
-            } else {
-              localStorage.removeItem("token")
-              setToken(null)
-            }
+      const data = await response.json()
+
+      if (response.ok && data.token) {
+        // Update access token in state
+        setToken(data.token)
+        
+        // Schedule next refresh (13 minutes, before 15-minute expiry)
+        scheduleTokenRefresh()
+        return true
+      } else {
+        // Refresh token invalid/expired - must login again
+        await logout()
+        return false
+      }
+    } catch (error) {
+      console.error("Token refresh failed:", error)
+      await logout()
+      return false
+    }
+  }
+
+  /**
+   * Schedule automatic token refresh
+   */
+  const scheduleTokenRefresh = () => {
+    // Clear existing interval
+    if (tokenRefreshInterval.current) {
+      clearInterval(tokenRefreshInterval.current)
+    }
+
+    // Schedule refresh 2 minutes before expiry (13 minutes from now)
+    const refreshDelay = TOKEN_CONFIG.accessTokenExpiry - TOKEN_CONFIG.refreshThreshold
+    tokenRefreshInterval.current = setInterval(() => {
+      refreshAccessToken()
+    }, refreshDelay)
+  }
+
+  /**
+   * Clear scheduled token refresh
+   */
+  const clearScheduledRefresh = () => {
+    if (tokenRefreshInterval.current) {
+      clearInterval(tokenRefreshInterval.current)
+      tokenRefreshInterval.current = null
+    }
+  }
+  useEffect(() => {
+    const verifySession = async () => {
+      let storedToken: string | null = null
+      try {
+        // Check for JWT token (custom auth)
+        storedToken = localStorage.getItem("token")
+        if (storedToken) {
+          setToken(storedToken)
+          
+          // Check cache first
+          const cacheKey = `auth_verify_${storedToken}`
+          const cached = apiCache.get(cacheKey)
+          if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+            setUser(cached.data.user)
+            setIsLoading(false)
+            return
+          }
+
+          // Verify token with backend
+          const response = await fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ token: storedToken }),
           })
-          .catch(() => {
+
+          const data = await response.json()
+          
+          if (response.ok && data.user) {
+            // Cache the response
+            apiCache.set(cacheKey, { data, timestamp: Date.now() })
+            setUser(data.user)
+          } else {
+            // Token is invalid, clear it
             localStorage.removeItem("token")
             setToken(null)
-          })
+          }
+        }
+      } catch (error) {
+        console.error("Session verification error:", error)
+        localStorage.removeItem("token")
+        setToken(null)
+      } finally {
+        setIsLoading(false)
+        // Schedule token refresh if user is authenticated
+        if (storedToken) {
+          scheduleTokenRefresh()
+        }
       }
     }
 
-    setIsLoading(false)
-  }, [session, status])
+    verifySession()
+
+    // Cleanup on unmount
+    return () => {
+      clearScheduledRefresh()
+    }
+  }, []) // Only run on mount
 
   const login = async (email: string, password: string) => {
     try {
@@ -98,6 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, password }),
+        credentials: 'include', // Send/receive cookies (refresh token)
       })
 
       const data = await response.json()
@@ -109,6 +179,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("token", data.token)
       setToken(data.token)
       setUser(data.user)
+      
+      // Schedule automatic token refresh (13 minutes from now)
+      scheduleTokenRefresh()
+      
       router.push("/live")
     } catch (error) {
       console.error("Login failed:", error)
@@ -142,18 +216,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await signOut({ callbackUrl: "/" })
+      // Call backend logout to revoke refresh token
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+        credentials: 'include', // Send cookies
+      })
     } catch (error) {
-      console.error("Sign out error:", error)
+      console.error("Backend logout failed:", error)
+      // Continue with local cleanup even if backend call fails
     }
 
-    // Also clear custom auth
+    // Clear scheduled token refresh
+    clearScheduledRefresh()
+
+    // Clear local auth state
     localStorage.removeItem("token")
     setToken(null)
     setUser(null)
-    // Clear cache on logout
     apiCache.clear()
-    router.push("/")
+
+    router.push("/login")
   }
 
   return (

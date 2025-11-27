@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@antmedia/web_player": "^2.12.1"
+  }
+}

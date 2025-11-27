@@ -11,7 +11,7 @@ interface Sermon {
   title: string
   speaker: string
   duration: number
-  viewCount: number
+  viewCount?: number
   thumbnailUrl: string
   category: string
   publishedAt: string
@@ -26,22 +26,20 @@ export function ArchiveGrid() {
   useEffect(() => {
     const fetchVideos = async () => {
       try {
-        const token = localStorage.getItem('token')
-        const response = await fetch('/api/archive', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
+        const token = localStorage.getItem("token")
+        
+        const response = await fetch("/api/archive", {
+          headers: { Authorization: `Bearer ${token}` }
         })
 
-        if (!response.ok) {
-          throw new Error('Failed to load videos')
-        }
+        if (!response.ok) throw new Error("Failed to load videos")
 
         const data = await response.json()
-        setVideos(data.videos)
+        setVideos(data.videos || [])
         setIsLoading(false)
+
       } catch (err) {
-        setError('Failed to load videos')
+        setError("Failed to load videos")
         setIsLoading(false)
       }
     }
@@ -54,18 +52,17 @@ export function ArchiveGrid() {
     const minutes = Math.floor((seconds % 3600) / 60)
     const secs = seconds % 60
 
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-    }
-    return `${minutes}:${secs.toString().padStart(2, '0')}`
+    return hours > 0
+      ? `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+      : `${minutes}:${secs.toString().padStart(2, "0")}`
   }
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
     })
   }
 
@@ -74,20 +71,11 @@ export function ArchiveGrid() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {[...Array(6)].map((_, i) => (
           <Card key={i} className="overflow-hidden">
-            <div className="relative aspect-video bg-muted animate-pulse">
-              <div className="absolute inset-0 bg-black/20"></div>
-            </div>
+            <div className="relative aspect-video bg-muted animate-pulse"></div>
             <CardContent className="p-4 space-y-3">
               <div className="space-y-2">
                 <div className="h-4 bg-muted animate-pulse rounded"></div>
                 <div className="h-3 bg-muted animate-pulse rounded w-2/3"></div>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-3 bg-muted animate-pulse rounded w-16"></div>
-                  <div className="h-3 bg-muted animate-pulse rounded w-12"></div>
-                </div>
-                <div className="h-5 bg-muted animate-pulse rounded w-20"></div>
               </div>
             </CardContent>
           </Card>
@@ -103,10 +91,8 @@ export function ArchiveGrid() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-destructive/20">
             <AlertCircle className="h-8 w-8 text-destructive" />
           </div>
-          <div className="space-y-2">
-            <p className="text-lg font-semibold">Unable to load videos</p>
-            <p className="text-muted-foreground">{error}</p>
-          </div>
+          <p className="text-lg font-semibold">Unable to load videos</p>
+          <p className="text-muted-foreground">{error}</p>
         </div>
       </div>
     )
@@ -119,10 +105,8 @@ export function ArchiveGrid() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted">
             <Play className="h-8 w-8 text-muted-foreground" />
           </div>
-          <div className="space-y-2">
-            <p className="text-lg font-semibold">No videos available</p>
-            <p className="text-muted-foreground">Check back later for new sermons and messages</p>
-          </div>
+          <p className="text-lg font-semibold">No videos available</p>
+          <p className="text-muted-foreground">Check back later for new sermons and messages</p>
         </div>
       </div>
     )
@@ -144,28 +128,32 @@ export function ArchiveGrid() {
                   <Play className="h-6 w-6 text-primary-foreground ml-1" />
                 </div>
               </div>
-              <div className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-sm px-2 py-1 rounded text-xs text-white font-medium">
+              <div className="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-xs text-white font-medium">
                 {formatDuration(video.duration)}
               </div>
             </div>
+
             <CardContent className="p-4 space-y-3">
               <div className="space-y-2">
-                <h3 className="font-semibold leading-relaxed text-balance line-clamp-2 group-hover:text-primary transition-colors">
+                <h3 className="font-semibold line-clamp-2 group-hover:text-primary transition-colors">
                   {video.title}
                 </h3>
                 <p className="text-sm text-muted-foreground">{video.speaker}</p>
               </div>
+
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
                     <span>{formatDate(video.publishedAt || video.createdAt)}</span>
                   </div>
+
                   <div className="flex items-center gap-1">
                     <Eye className="h-3 w-3" />
-                    <span>{video.viewCount.toLocaleString()}</span>
+                    <span>{Number(video.viewCount || 0).toLocaleString()}</span>
                   </div>
                 </div>
+
                 <Badge variant="secondary" className="text-xs">
                   {video.category}
                 </Badge>

@@ -4,7 +4,5 @@ npm-debug.log
 .gitignore
 Dockerfile*
 docker-compose*
-dist
-.next
 .vscode
 .env
