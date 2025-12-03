@@ -4,12 +4,8 @@ import { NavigationHeader } from "@/components/navigation-header";
 import LiveStreamPlayer from "@/components/live-stream-player";
 import { StreamChat } from "@/components/stream-chat";
 import { ProtectedRoute } from "@/components/protected-route";
-import { useSearchParams } from "next/navigation";
 
 function LivePageContent() {
-  const searchParams = useSearchParams();
-  const antBaseURL = process.env.NEXT_PUBLIC_ANT_BASE_URL;
-
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -17,10 +13,12 @@ function LivePageContent() {
 
       <main className="flex-1 container mx-auto px-4 py-6">
         <div className="grid lg:grid-cols-3 gap-6">
+
           {/* Player */}
           <div className="lg:col-span-2 space-y-6">
             <div className="w-full rounded-lg overflow-hidden bg-black">
-              <LiveStreamPlayer streamKey="church" /> {/* ✔ Correct usage */}
+              {/* MUST USE church_ssl */}
+              <LiveStreamPlayer streamKey="church_ssl" />
             </div>
           </div>
 
@@ -28,6 +26,7 @@ function LivePageContent() {
           <div className="lg:col-span-1">
             <StreamChat />
           </div>
+
         </div>
       </main>
 
