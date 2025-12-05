@@ -75,6 +75,18 @@ const passwordResetTokens = pgTable('password_reset_tokens', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
+const chatMessages = pgTable('chat_messages', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  username: varchar('username', { length: 100 }).notNull(),
+  message: text('message').notNull(),
+  streamId: varchar('stream_id', { length: 255 }).notNull(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  isLiveComment: boolean('is_live_comment').notNull().default(true),
+});
+
 // Relations
 const usersRelations = relations(users, ({ many }) => ({
   favorites: many(favorites),

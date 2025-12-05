@@ -3,6 +3,8 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const cluster = require('cluster');
 const os = require('os');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 require('dotenv').config();
 
 const logger = require('./config/logger');
@@ -29,6 +31,15 @@ if (cluster.isMaster && process.env.NODE_ENV === 'production') {
   });
 } else {
   const app = express();
+  const server = createServer(app);
+  const io = new Server(server, {
+    cors: {
+      origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+      methods: ["GET", "POST"],
+      credentials: true
+    },
+    transports: ['websocket', 'polling']
+  });
   const PORT = process.env.PORT || 5000;
 
   // Middleware
@@ -82,13 +93,43 @@ if (cluster.isMaster && process.env.NODE_ENV === 'production') {
   // Admin routes
   app.use('/api/admin', require('./routes/admin'));
 
+  // Socket.IO connection handling
+  io.on('connection', (socket) => {
+    logger.info(`User connected: ${socket.id}`);
+
+    // Join chat room
+    socket.on('join-chat', (data) => {
+      socket.join('live-chat');
+      logger.info(`User ${socket.id} joined live chat`);
+    });
+
+    // Handle new messages
+    socket.on('send-message', (data) => {
+      const message = {
+        id: require('uuid').v4(),
+        user: data.user,
+        message: data.message,
+        timestamp: new Date(),
+        isLiveComment: true
+      };
+      // Broadcast to all clients in the chat room
+      io.to('live-chat').emit('new-message', message);
+      logger.info(`Message from ${data.user}: ${data.message}`);
+    });
+
+    // Handle disconnection
+    socket.on('disconnect', () => {
+      logger.info(`User disconnected: ${socket.id}`);
+    });
+  });
+
   // Error handling middleware
   app.use((err, req, res, next) => {
     logger.error(`Error: ${err.message}`, { stack: err.stack });
     res.status(500).json({ error: 'Internal server error' });
   });
 
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     logger.info(`Worker ${process.pid} started on port ${PORT}`);
 
     // Start health monitoring in production

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Send } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
+import { io, Socket } from "socket.io-client"
 
 interface ChatMessage {
   id: string
@@ -21,8 +22,79 @@ interface ChatMessage {
 export function StreamChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState("")
+  const [isConnected, setIsConnected] = useState(false)
+  const [isStreamLive, setIsStreamLive] = useState(false)
+  const [streamTitle, setStreamTitle] = useState("Live Stream")
   const scrollRef = useRef<HTMLDivElement>(null)
+  const socketRef = useRef<Socket | null>(null)
   const { isAuthenticated, user } = useAuth()
+
+  // Fetch stream status from backend
+  useEffect(() => {
+    const fetchStreamStatus = async () => {
+      try {
+        const response = await fetch('/api/live-stream/current-stream', {
+          credentials: 'include',
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setIsStreamLive(data.isLive)
+          setStreamTitle(data.title || "Live Stream")
+        }
+      } catch (error) {
+        console.error('Failed to fetch stream status:', error)
+        setIsStreamLive(false)
+        setStreamTitle("Live Stream")
+      }
+    }
+
+    // Fetch initial status
+    fetchStreamStatus()
+
+    // Poll for status updates every 30 seconds
+    const interval = setInterval(fetchStreamStatus, 30000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Socket.IO connection and message handling
+  useEffect(() => {
+    if (isAuthenticated) {
+      // Connect to Socket.IO server
+      const socket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000', {
+        withCredentials: true,
+      })
+      socketRef.current = socket
+
+      // Handle connection
+      socket.on('connect', () => {
+        setIsConnected(true)
+        if (user?.name) {
+          socket.emit('join-chat', { user: user.name })
+        }
+      })
+
+      // Handle connection error
+      socket.on('connect_error', (error) => {
+        setIsConnected(false)
+      })
+
+      // Handle disconnection
+      socket.on('disconnect', () => {
+        setIsConnected(false)
+      })
+
+      // Handle incoming messages
+      socket.on('new-message', (message: ChatMessage) => {
+        setMessages((prev) => [...prev, message])
+      })
+
+      // Cleanup on unmount
+      return () => {
+        socket.disconnect()
+      }
+    }
+  }, [isAuthenticated, user])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -33,21 +105,24 @@ export function StreamChat() {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newMessage.trim() || !isAuthenticated) return
 
-    const message: ChatMessage = {
-      id: Math.random().toString(),
-      user: user?.name || "Anonymous",
-      message: newMessage,
-      timestamp: new Date(),
+    if (!newMessage.trim() || !isAuthenticated || !socketRef.current || !user?.name) {
+      return
     }
 
-    setMessages((prev) => [...prev, message])
+
+    // Send message via Socket.IO
+    socketRef.current.emit('send-message', {
+      user: user.name,
+      message: newMessage.trim()
+    })
+
     setNewMessage("")
   }
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString("en-US", {
+  const formatTime = (date: Date | string) => {
+    const dateObj = typeof date === 'string' ? new Date(date) : date
+    return dateObj.toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,

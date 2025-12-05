@@ -81,7 +81,9 @@ router.post('/login', validateLogin, async (req, res) => {
       });
     }
     const token = jwt.sign({ id: user[0].id, role: user[0].role }, process.env.JWT_SECRET);
-    res.json({ token, user: user[0] });
+    // Map username to name for frontend compatibility
+    const userResponse = { ...user[0], name: user[0].username };
+    res.json({ token, user: userResponse });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -231,9 +233,10 @@ router.post('/verify', async (req, res) => {
           return res.status(401).json({ error: 'User not found' });
         }
 
-        // Return user data (without password)
+        // Return user data (without password) with name field for frontend compatibility
         const { password, ...userWithoutPassword } = user[0];
-        res.json({ user: userWithoutPassword });
+        const userResponse = { ...userWithoutPassword, name: user[0].username };
+        res.json({ user: userResponse });
       } catch (dbError) {
         console.error('Database error during token verification:', dbError);
         res.status(500).json({ error: 'Database error' });
